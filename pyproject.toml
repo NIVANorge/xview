@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "xview"
+version = "0.1.0"
+description = ""
+authors = []
+readme = "README.md"
+include = ["templates/*"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.0.1"
+folium = "^0.16.0"
+xarray = "^2025.3.1"
+movingpandas = "^0.21.2"
+hvplot = "^0.11.2"
+panel = {extras = ["fastapi"], version = "^1.6.2"}
+netcdf4 = "^1.7.2"
+cf-xarray = "^0.10.4"
+pydantic = "^2.11.1"
+pydantic-settings = "^2.8.1"
+fastapi = "^0.115.12"
+uvicorn = "^0.34.0"
+lxml = "^5.3.1"
+elementpath = "^4.8.0"
+
+[tool.poetry.group.dev.dependencies]
+isort = "^5.13.2"
+watchfiles = "^1.0.4"
+black = "^25.1.0"
+pytest = "^8.3.5"
+
+[tool.black]
+line-length = 119
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
