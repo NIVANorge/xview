@@ -35,10 +35,10 @@ def data_links(url, start=None, end=None, step=None):
         end = pd.to_datetime(end).strftime("%Y-%m-%dT%H:%M:%S")
 
     query_params = [f"{p}={v}" for p, v in [("start", start), ("end", end), ("step", step)] if v is not None]
-    query_string = "&".join(query_params)
-    html_url = f"{SETTINGS.server_url}/xview/data?f=html&url={urllib.parse.quote(url)}&{query_string}"
-    json_url = f"{SETTINGS.server_url}/xview/data?f=json&url={urllib.parse.quote(url)}&{query_string}"
-    csv_url = f"{SETTINGS.server_url}/xview/data?f=csv&url={urllib.parse.quote(url)}&{query_string}"
+    query_string = "&" + "&".join(query_params) if query_params else ""
+    html_url = f"{SETTINGS.server_url}/xview/data?f=html&url={urllib.parse.quote(url)}{query_string}"
+    json_url = f"{SETTINGS.server_url}/xview/data?f=json&url={urllib.parse.quote(url)}{query_string}"
+    csv_url = f"{SETTINGS.server_url}/xview/data?f=csv&url={urllib.parse.quote(url)}{query_string}"
 
     html_url = f"[{html_url}]({html_url})"
     json_url = f"[{json_url}]({json_url})"

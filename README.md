@@ -9,11 +9,6 @@
 - **Flexible Output Formats**: Serve data in JSON, CSV, or HTML formats.
 - **FastAPI Endpoints**: Expose RESTful APIs for data visualization and retrieval.
 
-## Requirements
-
-- Python 3.9+
-- Dependencies listed in `pyproject.toml` or `requirements.txt`
-
 ## Installation
 
 1. Clone the repository:
