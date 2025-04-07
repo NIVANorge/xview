@@ -19,7 +19,7 @@ def info(ds, url):
     info_txt = (
         f"## Welcome to xview!\n\n"
         f"xview allows you to visualize datasets and export them in various formats.\n\n"
-        f"Also see the **[API docs](/docs)** for more information.\n\n"
+        f"Also see the **[API docs]({SETTINGS.server_url}/xview/docs)** for more information.\n\n"
         f"### Dataset Information\n"
         f"- **Title:** {ds.attrs.get('title', 'N/A')}\n"
         f"- **Summary:** {ds.attrs.get('summary', 'N/A')}\n"
@@ -55,24 +55,6 @@ class Params:
     end: datetime | int | None
     step: str | int = 1
 
-    def __post_init__(self):
-        if isinstance(self.step, str) and self.step.isdigit():
-            self.step = int(self.step)
-        if isinstance(self.start, str):
-            if self.start.isdigit():
-                self.start = int(self.start)
-            else:
-                self.start = pd.to_datetime(self.start)
-        if isinstance(self.end, str):
-            if self.end.isdigit():
-                self.end = int(self.end)
-            else:
-                self.end = pd.to_datetime(self.end)
-
-        if type(self.start) != type(self.end):
-            print(self.start, self.end)
-            raise ValueError("Start and end must have the same type")
-
 
 def query_params(ds):
     params = {
@@ -83,11 +65,22 @@ def query_params(ds):
 
     time_default = True
 
-    if "start" in params and params["start"].isdigit():
-        time_default = False
+    if "start" in params:
+        if params["start"].isdigit():
+            time_default = False
+            params["start"] = int(params["start"])
+        else:
+            params["start"] = pd.to_datetime(params["start"])
 
-    if "end" in params and params["end"].isdigit():
-        time_default = False
+    if "end" in params:
+        if params["end"].isdigit():
+            time_default = False
+            params["end"] = int(params["end"])
+        else:
+            params["end"] = pd.to_datetime(params["end"])
+
+    if "step" in params and params["step"].isdigit():
+        params["step"] = int(params["step"])
 
     if "start" not in params and "time" in ds.dims and len(ds.time) > DEFAULT_N_POINTS:
         # If the dataset is large and no start time is provided, set a default start time
@@ -96,7 +89,11 @@ def query_params(ds):
         else:
             params["start"] = -DEFAULT_N_POINTS
 
-    param_list = [v for v in ds.data_vars if "time" in ds[v].dims]
+    param_list = [
+        f"{ds[v].attrs['long_name']}[{v}]" if "long_name" in ds[v].attrs else v
+        for v in ds.data_vars
+        if len(ds[v].dims) > 0
+    ]
     if "parameter-name" not in params:
         params["parameter-name"] = param_list[0] if param_list else None
 
@@ -116,33 +113,37 @@ def create_app():
     column = pn.Column(*info(ds, url))
 
     params = query_params(ds)
-    if not params.current_param:
-        column.extend([data_links(url)])
-    else:
+    if len(ds.dims) > 1:
+        column.extend([data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."])
+    elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
         column.extend(time_plot(utils.bytes_to_str(ds), url, params))
 
     return column
 
 
 @pn.cache
-def sel(ds, start, end, step):
+def sel(ds, dim_name, start, end, step):
 
     if isinstance(start, datetime):
-        return ds.sel(time=slice(start, end)).isel(time=slice(None, None, step))
+        return ds.sel({dim_name: slice(start, end)}).isel({dim_name: slice(None, None, step)})
 
-    return ds.isel(time=slice(start, end, step))
-
-
-@pn.cache
-def update_plot(variable_selector, ds, start, end, step):
-    return sel(ds[variable_selector], start, end, step).hvplot.scatter(x="time", size=2.5)
+    return ds.isel({dim_name: slice(start, end, step)})
 
 
 @pn.cache
-def update_data_preview(ds, start, end, step):
-    ds = sel(ds, start, end, step)
+def update_plot(variable_selector, ds, dim_name, start, end, step):
+    var = variable_selector
+    if "[" in var:
+        var = var.split("[")[1].split("]")[0]
+    print(f"Selected variable: {var}")
+    return sel(ds[var], dim_name, start, end, step).hvplot.scatter(x=dim_name, size=2.5)
+
+
+@pn.cache
+def update_data_preview(ds, dim_name, start, end, step):
+    ds = sel(ds, dim_name, start, end, step)
     return pn.widgets.Tabulator(
-        ds.isel(time=slice(-100, None, None)).to_dataframe()[::-1],
+        ds.isel({dim_name: slice(-100, None, None)}).to_dataframe()[::-1],
         disabled=True,
         height=400,
         pagination="local",
@@ -170,16 +171,20 @@ def time_plot(ds: xr.Dataset, url, params: Params):
         pn.state.location.sync(end_slider, {"value": "end"})
         pn.state.location.sync(variable_selector, {"value": "parameter-name"})
 
+    dim_name = next(iter(ds.dims))
     binding_plot = pn.bind(
         update_plot,
         variable_selector=variable_selector,
         ds=ds,
+        dim_name=dim_name,
         start=start_slider,
         end=end_slider,
         step=step_slider,
     )
     download_binding = pn.bind(data_links, url=url, start=start_slider, end=end_slider, step=step_slider)
-    binding_preview = pn.bind(update_data_preview, ds=ds, start=start_slider, end=end_slider, step=step_slider)
+    binding_preview = pn.bind(
+        update_data_preview, ds=ds, dim_name=dim_name, start=start_slider, end=end_slider, step=step_slider
+    )
 
     controls = pn.Row(
         pn.Column("### Controls", variable_selector, step_slider),
@@ -188,7 +193,7 @@ def time_plot(ds: xr.Dataset, url, params: Params):
 
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
-    column.append(pn.pane.Markdown("### Data Preview (max 500 records)"))
+    column.append(pn.pane.Markdown("### Data Preview (max 100 records)"))
     column.append(binding_preview)
 
     return column
