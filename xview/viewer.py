@@ -2,6 +2,7 @@ import hvplot.xarray
 import hvplot.pandas
 import panel as pn
 import cf_xarray
+import geoviews as gv
 import xarray as xr
 import urllib.parse
 import pandas as pd
@@ -169,10 +170,10 @@ def update_map(ds, variable_selector, dim_name, end):
         tiles="OSM",
         cmap="viridis",
         size=10,
-        width=600,
         height=600,
         colorbar=True,
-    )).opts(default_span=1000.0,) 
+        clabel=f"{ds[var].attrs.get('long_name', var)}[{var}[{ds[var].attrs.get('units', '')}]]",
+    )).opts(default_span=1000.0, width=1000, responsive=True) 
 
 
 @pn.cache
