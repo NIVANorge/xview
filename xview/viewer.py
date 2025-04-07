@@ -147,7 +147,7 @@ def update_map(ds, variable_selector, dim_name, start, end, step):
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
-    ds = sel(ds, dim_name, start, end, step)
+    ds = sel(ds, dim_name, start, end, 10)
     x = ds.cf.axes["X"][0]
     y = ds.cf.axes["Y"][0]
  
@@ -214,9 +214,7 @@ def time_plot(ds: xr.Dataset, url, params: Params):
         step=step_slider,
     )
     download_binding = pn.bind(data_links, url=url, start=start_slider, end=end_slider, step=step_slider)
-    binding_preview = pn.bind(
-        update_data_preview, ds=ds, dim_name=dim_name, start=start_slider, end=end_slider, step=step_slider
-    )
+
     map_plot = pn.bind(
         update_map,
         ds=ds,
@@ -234,8 +232,5 @@ def time_plot(ds: xr.Dataset, url, params: Params):
 
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
-   
-    column.append("### Data Preview (max 100 records)")
-    column.append(binding_preview)
-  
-    return pn.Column("### Map preview(end - 1 day)", map_plot), column
+     
+    return pn.Column("### Map preview(end - 1 day every 10 points)", map_plot), column
