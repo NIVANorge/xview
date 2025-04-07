@@ -1,10 +1,11 @@
 import hvplot.xarray
+import hvplot.pandas
 import panel as pn
 import cf_xarray
 import xarray as xr
 import urllib.parse
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 from xview import utils
@@ -92,7 +93,7 @@ def query_params(ds):
     param_list = [
         f"{ds[v].attrs['long_name']}[{v}]" if "long_name" in ds[v].attrs else v
         for v in ds.data_vars
-        if len(ds[v].dims) > 0
+        if len(ds[v].dims) > 0 and not v.endswith("_qc")
     ]
     if "parameter-name" not in params:
         params["parameter-name"] = param_list[0] if param_list else None
@@ -116,7 +117,8 @@ def create_app():
     if len(ds.dims) > 1:
         column.extend([data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."])
     elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
-        column.extend(time_plot(utils.bytes_to_str(ds), url, params))
+        map_col, plot_col = time_plot(ds, url, params)
+        column = pn.Column(pn.Row(column, map_col), plot_col)
 
     return column
 
@@ -135,8 +137,38 @@ def update_plot(variable_selector, ds, dim_name, start, end, step):
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
-    print(f"Selected variable: {var}")
+
     return sel(ds[var], dim_name, start, end, step).hvplot.scatter(x=dim_name, size=2.5)
+
+
+@pn.cache
+def update_map(ds, variable_selector, dim_name, start, end, step):
+
+    var = variable_selector
+    if "[" in var:
+        var = var.split("[")[1].split("]")[0]
+    ds = sel(ds, dim_name, start, end, step)
+    x = ds.cf.axes["X"][0]
+    y = ds.cf.axes["Y"][0]
+ 
+    dt_end = pd.to_datetime(ds[dim_name].values[-1])
+    df = ds.sel({dim_name: slice(dt_end - timedelta(days=1), dt_end)}).to_dataframe()
+
+    
+    return (df.hvplot.points(
+        x=x,
+        y=y,
+        c=var,
+        hover_cols=[dim_name, x, y, var],
+        geo=True,
+        tiles="OSM",
+        cmap="viridis",
+        size=3,
+        alpha=0.5,
+        width=800,
+        height=600,
+        colorbar=True,
+    )).opts(default_span=1000.0,) 
 
 
 @pn.cache
@@ -185,6 +217,15 @@ def time_plot(ds: xr.Dataset, url, params: Params):
     binding_preview = pn.bind(
         update_data_preview, ds=ds, dim_name=dim_name, start=start_slider, end=end_slider, step=step_slider
     )
+    map_plot = pn.bind(
+        update_map,
+        ds=ds,
+        variable_selector=variable_selector,
+        dim_name=dim_name,
+        start=start_slider,
+        end=end_slider,
+        step=step_slider,
+    )
 
     controls = pn.Row(
         pn.Column("### Controls", variable_selector, step_slider),
@@ -193,7 +234,8 @@ def time_plot(ds: xr.Dataset, url, params: Params):
 
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
-    column.append(pn.pane.Markdown("### Data Preview (max 100 records)"))
+   
+    column.append("### Data Preview (max 100 records)")
     column.append(binding_preview)
-
-    return column
+  
+    return pn.Column("### Map preview(end - 1 day)", map_plot), column
