@@ -163,8 +163,7 @@ def update_map(ds, variable_selector, dim_name, start, end, step):
         geo=True,
         tiles="OSM",
         cmap="viridis",
-        size=3,
-        alpha=0.5,
+        size=10,
         width=800,
         height=600,
         colorbar=True,
@@ -233,4 +232,4 @@ def time_plot(ds: xr.Dataset, url, params: Params):
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
      
-    return pn.Column("### Map preview(end - 1 day every 10 points)", map_plot), column
+    return pn.Column("### Map preview(end - 1 day, every 10 points)", map_plot), column
