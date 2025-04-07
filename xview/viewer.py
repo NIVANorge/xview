@@ -79,6 +79,7 @@ def query_params(ds):
             params["end"] = int(params["end"])
         else:
             params["end"] = pd.to_datetime(params["end"])
+    
 
     if "step" in params and params["step"].isdigit():
         params["step"] = int(params["step"])
@@ -102,7 +103,7 @@ def query_params(ds):
         current_param=params["parameter-name"],
         param_list=param_list,
         start=params.get("start", pd.to_datetime(ds.time.min().values) if time_default else 0),
-        end=params.get("end", pd.to_datetime(ds.time.max().values) if time_default else len(ds.time)),
+        end=params.get("end", pd.to_datetime(ds.time.max().values) if time_default else len(ds.time)-1),
         step=pn.state.session_args.get("step", 1),
     )
 
@@ -142,17 +143,17 @@ def update_plot(variable_selector, ds, dim_name, start, end, step):
 
 
 @pn.cache
-def update_map(ds, variable_selector, dim_name, start, end, step):
+def update_map(ds, variable_selector, dim_name, end):
 
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
-    ds = sel(ds, dim_name, start, end, 10)
     x = ds.cf.axes["X"][0]
     y = ds.cf.axes["Y"][0]
- 
-    dt_end = pd.to_datetime(ds[dim_name].values[-1])
-    df = ds.sel({dim_name: slice(dt_end - timedelta(days=1), dt_end)}).to_dataframe()
+    
+    if isinstance(end, int):
+        end = pd.to_datetime(ds[dim_name].values[end])
+    df = ds.sel({dim_name: slice(end - timedelta(days=1), end)}).to_dataframe()
 
     
     return (df.hvplot.points(
@@ -194,8 +195,9 @@ def time_plot(ds: xr.Dataset, url, params: Params):
             name="End Time", start=ds.time.min().values, end=ds.time.max().values, value=params.end
         )
     else:
-        start_slider = pn.widgets.IntSlider(name="Start Range", start=0, end=len(ds.time), step=1, value=params.start)
-        end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time), step=1, value=params.end)
+        start_slider = pn.widgets.IntSlider(name="Start Range", start=0, end=len(ds.time)-1, step=1, value=params.start)
+        end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time)-1, step=1, value=params.end)
+        print("start", params.end)
 
     if pn.state.location:
         pn.state.location.sync(start_slider, {"value": "start"})
@@ -219,9 +221,7 @@ def time_plot(ds: xr.Dataset, url, params: Params):
         ds=ds,
         variable_selector=variable_selector,
         dim_name=dim_name,
-        start=start_slider,
         end=end_slider,
-        step=step_slider,
     )
 
     controls = pn.Row(
