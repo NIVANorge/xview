@@ -148,8 +148,10 @@ def update_map(ds, variable_selector, dim_name, end):
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
-    x = ds.cf.axes["X"][0]
-    y = ds.cf.axes["Y"][0]
+    
+
+    x = ds.cf["longitude"].name
+    y = ds.cf["latitude"].name
     
     if isinstance(end, int):
         end = pd.to_datetime(ds[dim_name].values[end])
