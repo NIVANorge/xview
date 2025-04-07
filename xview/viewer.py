@@ -21,13 +21,15 @@ def info(ds, url):
         f"## Welcome to xview!\n\n"
         f"xview allows you to visualize datasets and export them in various formats.\n\n"
         f"Also see the **[API docs]({SETTINGS.server_url}/xview/docs)** for more information.\n\n"
+    )
+    ds_txt = (
         f"### Dataset Information\n"
         f"- **Title:** {ds.attrs.get('title', 'N/A')}\n"
         f"- **Summary:** {ds.attrs.get('summary', 'N/A')}\n"
         f"- **OPeNDAP URL:** [{url}]({url}.html)\n"
     )
 
-    return pn.pane.Markdown(info_txt), pn.panel(ds)
+    return pn.pane.Markdown(info_txt), pn.pane.Markdown(ds_txt), pn.panel(ds)
 
 
 def data_links(url, start=None, end=None, step=None):
@@ -119,7 +121,7 @@ def create_app():
         column.extend([data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."])
     elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
         map_col, plot_col = time_plot(ds, url, params)
-        column = pn.Column(pn.Row(column, map_col), plot_col)
+        column = pn.Column(column[0], pn.Row(pn.Column(*column[1:]), map_col), plot_col)
 
     return column
 
@@ -167,7 +169,7 @@ def update_map(ds, variable_selector, dim_name, end):
         tiles="OSM",
         cmap="viridis",
         size=10,
-        width=800,
+        width=600,
         height=600,
         colorbar=True,
     )).opts(default_span=1000.0,) 
@@ -234,4 +236,4 @@ def time_plot(ds: xr.Dataset, url, params: Params):
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
      
-    return pn.Column("### Map preview(end - 1 day, every 10 points)", map_plot), column
+    return pn.Column("### Map preview(end - 1 day)", map_plot), column
