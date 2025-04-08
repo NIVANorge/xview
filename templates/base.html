@@ -33,15 +33,22 @@
     <div class="loader" id="loading_indicator"> </div>
     {{ script|safe }}
     <script>
+        function onNodeInserted(event) {
+            if (event.target.className === "bk-panel-models-reactive_html-ReactiveHTML") {
+                document.getElementById("loading_indicator").style.display = "none";
+                document.querySelector("body").style.visibility = "visible";
+            } else {
+                document.getElementById("loading_indicator").style.animationDirection = "reverse";
+            }
+        }
+
+        document.addEventListener('DOMNodeInserted', onNodeInserted);
+    </script>
+    <script>
         document.onreadystatechange = function () {
             if (document.readyState !== "complete") {
                 document.querySelector("body").style.visibility = "hidden";
                 document.getElementById("loading_indicator").style.visibility = "visible";
-            } else {
-                setTimeout(() => {
-                    document.getElementById("loading_indicator").style.display = "none";
-                    document.querySelector("body").style.visibility = "visible";
-                }, 3000)
             }
         };
     </script>
