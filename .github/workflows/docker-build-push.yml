@@ -10,6 +10,7 @@ on:
       - 'Dockerfile'
       - 'poetry.lock'
       - 'pyproject.toml'
+      - 'templates/**'
 env:
   IMAGE_NAME: xview
 jobs:

@@ -8,7 +8,9 @@ import geopandas as gpd
 # %%
 ds = xr.open_dataset("https://thredds.niva.no/thredds/dodsC/datasets/nrt/color_fantasy.nc")
 # %%
-ds
+ds.sel(time=slice()
+#%%
+idx
 #%%
 points = shapely.points((10.459527, 54.540728))
 #%%
