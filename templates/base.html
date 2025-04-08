@@ -1,9 +1,50 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>xview panel</title>
-    </head>
-    <body>
-        {{ script|safe }}
-    </body>
+
+<head>
+    <style>
+        #loading_indicator {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            margin: auto;
+            border: 10px solid white;
+            border-radius: 50%;
+            border-top: 10px solid lightblue;
+            border-right: 10px solid whitesmoke;
+            border-bottom: 10px solid lightblue;
+            width: 100px;
+            height: 100px;
+            animation: spinIndicator 1s linear infinite;
+        }
+
+        @keyframes spinIndicator {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <title>xview panel</title>
+</head>
+
+<body>
+    <div class="loader" id="loading_indicator"> </div>
+    {{ script|safe }}
+    <script>
+        document.onreadystatechange = function () {
+            if (document.readyState !== "complete") {
+                document.querySelector("body").style.visibility = "hidden";
+                document.getElementById("loading_indicator").style.visibility = "visible";
+            } else {
+                setTimeout(() => {
+                    document.getElementById("loading_indicator").style.display = "none";
+                    document.querySelector("body").style.visibility = "visible";
+                }, 3000)
+            }
+        };
+    </script>
+</body>
+
 </html>
