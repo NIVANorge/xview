@@ -16,7 +16,7 @@ from dataclasses import dataclass
 DEFAULT_N_POINTS = 100000
 
 
-def info(ds, url):
+def create_info(ds, url):
 
     info_txt = (
         f"## Welcome to xview!\n\n"
@@ -82,7 +82,6 @@ def query_params(ds):
             params["end"] = int(params["end"])
         else:
             params["end"] = pd.to_datetime(params["end"])
-    
 
     if "step" in params and params["step"].isdigit():
         params["step"] = int(params["step"])
@@ -106,7 +105,7 @@ def query_params(ds):
         current_param=params["parameter-name"],
         param_list=param_list,
         start=params.get("start", pd.to_datetime(ds.time.min().values) if time_default else 0),
-        end=params.get("end", pd.to_datetime(ds.time.max().values) if time_default else len(ds.time)-1),
+        end=params.get("end", pd.to_datetime(ds.time.max().values) if time_default else len(ds.time) - 1),
         step=pn.state.session_args.get("step", 1),
     )
 
@@ -115,16 +114,17 @@ def create_app():
     url = urllib.parse.unquote(pn.state.session_args.get("url", [None])[0].decode("utf-8"))
     ds = xr.open_dataset(url)
 
-    column = pn.Column(*info(ds, url))
-
+    title, info, ds_pane = create_info(ds, url)
+    box = pn.FlexBox(justify_content="center", align_items="center")
     params = query_params(ds)
     if len(ds.dims) > 1:
-        column.extend([data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."])
+        box.extend(
+            [title, info, ds_pane, data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."]
+        )
     elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
         map_col, plot_col = time_plot(ds, url, params)
-        column = pn.Column(column[0], pn.Row(pn.Column(*column[1:]), map_col), plot_col)
-
-    return column
+        box.extend([title, pn.Row(pn.Column(info, ds_pane), map_col), plot_col])
+    return box
 
 
 @pn.cache
@@ -151,29 +151,31 @@ def update_map(ds, variable_selector, dim_name, end):
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
-    
 
     x = ds.cf["longitude"].name
     y = ds.cf["latitude"].name
-    
+
     if isinstance(end, int):
         end = pd.to_datetime(ds[dim_name].values[end])
     df = ds.sel({dim_name: slice(end - timedelta(days=1), end)}).to_dataframe()
 
-    
-    return (df.hvplot.points(
-        x=x,
-        y=y,
-        c=var,
-        hover_cols=[dim_name, x, y, var],
-        geo=True,
-        tiles="OSM",
-        cmap="viridis",
-        size=10,
-        height=600,
-        colorbar=True,
-        clabel=f"{ds[var].attrs.get('long_name', var)}[{var}[{ds[var].attrs.get('units', '')}]]",
-    )).opts(default_span=1000.0, width=1000, responsive=True) 
+    return (
+        df.hvplot.points(
+            x=x,
+            y=y,
+            c=var,
+            hover_cols=[dim_name, x, y, var],
+            geo=True,
+            tiles="OSM",
+            cmap="viridis",
+            size=10,
+            height=600,
+            colorbar=True,
+            clabel=f"{ds[var].attrs.get('long_name', var)}[{ds[var].attrs.get('units', '')}]",
+            min_width=200,
+            max_width=800,
+        )
+    ).opts(default_span=800.0, width=800, responsive=True)
 
 
 @pn.cache
@@ -200,8 +202,10 @@ def time_plot(ds: xr.Dataset, url, params: Params):
             name="End Time", start=ds.time.min().values, end=ds.time.max().values, value=params.end
         )
     else:
-        start_slider = pn.widgets.IntSlider(name="Start Range", start=0, end=len(ds.time)-1, step=1, value=params.start)
-        end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time)-1, step=1, value=params.end)
+        start_slider = pn.widgets.IntSlider(
+            name="Start Range", start=0, end=len(ds.time) - 1, step=1, value=params.start
+        )
+        end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time) - 1, step=1, value=params.end)
         print("start", params.end)
 
     if pn.state.location:
@@ -236,5 +240,5 @@ def time_plot(ds: xr.Dataset, url, params: Params):
 
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
-     
+
     return pn.Column("### Map preview(end - 1 day)", map_plot), column
