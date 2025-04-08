@@ -146,7 +146,7 @@ def update_plot(variable_selector, ds, dim_name, start, end, step):
 
 
 @pn.cache
-def update_map(ds, variable_selector, dim_name, end):
+def update_map(ds, variable_selector, dim_name, end, start, step, apply_to_map):
 
     var = variable_selector
     if "[" in var:
@@ -157,7 +157,14 @@ def update_map(ds, variable_selector, dim_name, end):
 
     if isinstance(end, int):
         end = pd.to_datetime(ds[dim_name].values[end])
-    df = ds.sel({dim_name: slice(end - timedelta(days=1), end)}).to_dataframe()
+
+    if not apply_to_map:
+        # use default range
+        start = end - timedelta(days=1)
+    elif isinstance(start, int):
+        start = pd.to_datetime(ds[dim_name].values[start])
+
+    df = ds.sel({dim_name: slice(start, end)}).isel({dim_name: slice(None, None, step)}).to_dataframe()
 
     return (
         df.hvplot.points(
@@ -224,6 +231,7 @@ def time_plot(ds: xr.Dataset, url, params: Params):
         step=step_slider,
     )
     download_binding = pn.bind(data_links, url=url, start=start_slider, end=end_slider, step=step_slider)
+    apply_to_map = pn.widgets.Checkbox(name='Apply to map', value=False)
 
     map_plot = pn.bind(
         update_map,
@@ -231,14 +239,17 @@ def time_plot(ds: xr.Dataset, url, params: Params):
         variable_selector=variable_selector,
         dim_name=dim_name,
         end=end_slider,
+        start=start_slider,
+        step=step_slider,
+        apply_to_map=apply_to_map,
     )
 
     controls = pn.Row(
         pn.Column("### Controls", variable_selector, step_slider),
-        pn.Column("### Time Range", start_slider, end_slider),
+        pn.Column("### Time Range", apply_to_map, start_slider, end_slider),
     )
 
     column = pn.Column(download_binding)
     column.extend([controls, binding_plot])
 
-    return pn.Column("### Map preview(end - 1 day)", map_plot), column
+    return pn.Column("### Map preview - default(end - 1 day)", map_plot), column
