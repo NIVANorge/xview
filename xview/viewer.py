@@ -21,7 +21,7 @@ def create_info(ds, url):
     info_txt = (
         f"## Welcome to xview!\n\n"
         f"xview allows you to visualize datasets and export them in various formats.\n\n"
-        f"Also see the **[API docs]({SETTINGS.server_url}/xview/docs)** for more information.\n\n"
+        f"Also see the **[API docs]({SETTINGS.server_url}/xview/docs)** or the **[xview repo](https://github.com/NIVANorge/xview)** for more information.\n\n"
     )
     ds_txt = (
         f"### Dataset Information\n"
