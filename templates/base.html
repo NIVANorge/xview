@@ -34,12 +34,9 @@
     {{ script|safe }}
     <script>
         function onNodeInserted(event) {
-            if (event.target.className === "bk-panel-models-reactive_html-ReactiveHTML") {
-                document.getElementById("loading_indicator").style.display = "none";
-                document.querySelector("body").style.visibility = "visible";
-            } else {
-                document.getElementById("loading_indicator").style.animationDirection = "reverse";
-            }
+            document.getElementById("loading_indicator").style.display = "none";
+            document.querySelector("body").style.visibility = "visible";
+            document.removeEventListener('DOMNodeInserted', onNodeInserted);
         }
 
         document.addEventListener('DOMNodeInserted', onNodeInserted);
