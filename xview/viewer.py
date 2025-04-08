@@ -106,7 +106,7 @@ def query_params(ds):
         param_list=param_list,
         start=params.get("start", pd.to_datetime(ds.time.min().values) if time_default else 0),
         end=params.get("end", pd.to_datetime(ds.time.max().values) if time_default else len(ds.time) - 1),
-        step=pn.state.session_args.get("step", 1),
+        step=params.get("step", 1),
     )
 
 
