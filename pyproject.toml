@@ -12,7 +12,6 @@ python = "^3.10"
 pandas = "^2.0.1"
 folium = "^0.16.0"
 xarray = "^2025.3.1"
-movingpandas = "^0.21.2"
 hvplot = "^0.11.2"
 panel = {extras = ["fastapi"], version = "^1.6.2"}
 netcdf4 = "^1.7.2"
@@ -24,6 +23,7 @@ uvicorn = "^0.34.0"
 lxml = "^5.3.1"
 elementpath = "^4.8.0"
 geoviews = "^1.14.0"
+geopandas = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^5.13.2"
