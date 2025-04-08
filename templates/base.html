@@ -33,19 +33,15 @@
     <div class="loader" id="loading_indicator"> </div>
     {{ script|safe }}
     <script>
-        function onNodeInserted(event) {
-            document.getElementById("loading_indicator").style.display = "none";
-            document.querySelector("body").style.visibility = "visible";
-            document.removeEventListener('DOMNodeInserted', onNodeInserted);
-        }
-
-        document.addEventListener('DOMNodeInserted', onNodeInserted);
-    </script>
-    <script>
         document.onreadystatechange = function () {
             if (document.readyState !== "complete") {
                 document.querySelector("body").style.visibility = "hidden";
                 document.getElementById("loading_indicator").style.visibility = "visible";
+            } else {
+                setTimeout(() => {
+                    document.getElementById("loading_indicator").style.display = "none";
+                    document.querySelector("body").style.visibility = "visible";
+                }, 4000)
             }
         };
     </script>
