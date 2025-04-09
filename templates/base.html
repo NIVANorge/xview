@@ -17,7 +17,7 @@
             border-bottom: 10px solid lightblue;
             width: 100px;
             height: 100px;
-            animation: spinIndicator 1s linear infinite;
+            animation: spinIndicator 1s linear infinite alternate-reverse;
         }
 
         @keyframes spinIndicator {
@@ -33,17 +33,25 @@
     <div class="loader" id="loading_indicator"> </div>
     {{ script|safe }}
     <script>
-        document.onreadystatechange = function () {
-            if (document.readyState !== "complete") {
-                document.querySelector("body").style.visibility = "hidden";
-                document.getElementById("loading_indicator").style.visibility = "visible";
-            } else {
-                setTimeout(() => {
-                    document.getElementById("loading_indicator").style.display = "none";
-                    document.querySelector("body").style.visibility = "visible";
-                }, 4000)
+        const observer = new MutationObserver((mutationsList) => {
+            for (const mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.classList && node.classList.contains('bk-panel-models-reactive_html-ReactiveHTML')) {
+                            console.log('Node with class "bk-panel-models-reactive_html-ReactiveHTML" added:', node);
+                            // Add your custom logic here
+                            document.getElementById("loading_indicator").style.display = "none";
+                            document.querySelector("body").style.visibility = "visible";
+                            observer.disconnect();
+                        }else{
+                            document.querySelector("body").style.visibility = "hidden";
+                            document.getElementById("loading_indicator").style.visibility = "visible";
+                        }
+                    });
+                }
             }
-        };
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     </script>
 </body>
 
