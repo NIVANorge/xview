@@ -165,7 +165,8 @@ def update_map(ds, variable_selector, dim_name, end, start, step, apply_to_map):
         start = pd.to_datetime(ds[dim_name].values[start])
 
     df = ds.sel({dim_name: slice(start, end)}).isel({dim_name: slice(None, None, step)}).to_dataframe()
-
+    if len(df) == 0:
+        return pn.pane.Markdown(f"No data in range {start} - {end}")
     return (
         df.hvplot.points(
             x=x,
