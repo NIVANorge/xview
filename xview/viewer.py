@@ -29,7 +29,7 @@ def create_app():
     ds = xr.open_dataset(url)
 
     title, info, ds_pane = create_info(ds, url)
-    box = pn.FlexBox(justify_content="center", align_items="center")
+    box = pn.FlexBox()
     params = query_params(ds)
     if len(ds.dims) > 1:
         box.extend(
@@ -37,7 +37,7 @@ def create_app():
         )
     elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
         map_col, plot_col = discrete_time_widgets(ds, url, params)
-        box.extend([title, pn.Row(pn.Column(info, ds_pane), map_col), plot_col])
+        box.extend([title, pn.FlexBox(pn.Column(info, ds_pane, max_width=600), map_col, flex_direction="row"), plot_col])
     return box
 
 
@@ -146,7 +146,7 @@ def varname_from_selector(variable_selector):
 def time_plot_widget(variable_selector, ds, dim_name, start, end, step):
     var = varname_from_selector(variable_selector)
 
-    return sel(ds[var], dim_name, start, end, step).hvplot.scatter(x=dim_name, size=2.5)
+    return sel(ds[var], dim_name, start, end, step).hvplot.scatter(x=dim_name, size=2.5, sizing_mode="stretch_width", min_height=400, max_height=600, responsive=True)
 
 @pn.cache
 def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_map):
@@ -244,7 +244,7 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
         pn.Column("### Time Range", apply_to_map, start_slider, end_slider),
     )
 
-    column = pn.Column(download_binding)
+    column = pn.Column(download_binding, sizing_mode="stretch_width")
     column.extend([controls, time_plot])
 
     return pn.Column("### Map preview - default(end - 1 day)", map_plot), column

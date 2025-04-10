@@ -112,7 +112,7 @@ async def health_check():
     """
     return {"status": "ok"}
 
-pn.extension(sizing_mode="stretch_width", template="fast")
+pn.extension(template="fast")
 pn.serve(
     {"/preview": create_app},
     port=5000,
