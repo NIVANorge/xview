@@ -239,12 +239,12 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
         apply_to_map=apply_to_map,
     )
 
-    controls = pn.Row(
+    controls = [
         pn.Column("### Controls", variable_selector, step_slider),
         pn.Column("### Time Range", apply_to_map, start_slider, end_slider),
-    )
+    ]
 
-    column = pn.Column(download_binding, sizing_mode="stretch_width")
-    column.extend([controls, time_plot])
+    time_box = pn.FlexBox(sizing_mode="stretch_width")
+    time_box.extend([*controls, download_binding, time_plot])
 
-    return pn.Column("### Map preview - default(end - 1 day)", map_plot), column
+    return pn.Column("### Map preview - default(end - 1 day)", map_plot), time_box
