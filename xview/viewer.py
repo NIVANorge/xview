@@ -122,7 +122,7 @@ def create_app():
             [title, info, ds_pane, data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."]
         )
     elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
-        map_col, plot_col = time_plot(ds, url, params)
+        map_col, plot_col = discrete_time_widgets(ds, url, params)
         box.extend([title, pn.Row(pn.Column(info, ds_pane), map_col), plot_col])
     return box
 
@@ -137,7 +137,7 @@ def sel(ds, dim_name, start, end, step):
 
 
 @pn.cache
-def update_plot(variable_selector, ds, dim_name, start, end, step):
+def time_plot(variable_selector, ds, dim_name, start, end, step):
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
@@ -146,7 +146,7 @@ def update_plot(variable_selector, ds, dim_name, start, end, step):
 
 
 @pn.cache
-def update_map(ds, variable_selector, dim_name, end, start, step, apply_to_map):
+def map_plot(ds, variable_selector, dim_name, end, start, step, apply_to_map):
 
     var = variable_selector
     if "[" in var:
@@ -187,7 +187,7 @@ def update_map(ds, variable_selector, dim_name, end, start, step, apply_to_map):
 
 
 @pn.cache
-def update_data_preview(ds, dim_name, start, end, step):
+def data_preview_table(ds, dim_name, start, end, step):
     ds = sel(ds, dim_name, start, end, step)
     return pn.widgets.Tabulator(
         ds.isel({dim_name: slice(-100, None, None)}).to_dataframe()[::-1],
@@ -197,8 +197,7 @@ def update_data_preview(ds, dim_name, start, end, step):
         page_size=50,
     )
 
-
-def time_plot(ds: xr.Dataset, url, params: Params):
+def time_control_widgets(ds, params):
     variable_selector = pn.widgets.Select(name="Variable", options=params.param_list, value=params.current_param)
     step_slider = pn.widgets.IntSlider(name="plot every n point", value=params.step, start=1, end=100, step=10)
 
@@ -216,6 +215,12 @@ def time_plot(ds: xr.Dataset, url, params: Params):
         end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time) - 1, step=1, value=params.end)
         print("start", params.end)
 
+    return variable_selector, step_slider, start_slider, end_slider
+
+def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
+
+    variable_selector, step_slider, start_slider, end_slider = time_control_widgets(ds, params)
+
     if pn.state.location:
         pn.state.location.sync(start_slider, {"value": "start"})
         pn.state.location.sync(end_slider, {"value": "end"})
@@ -223,7 +228,7 @@ def time_plot(ds: xr.Dataset, url, params: Params):
 
     dim_name = next(iter(ds.dims))
     binding_plot = pn.bind(
-        update_plot,
+        time_plot,
         variable_selector=variable_selector,
         ds=ds,
         dim_name=dim_name,
@@ -235,7 +240,7 @@ def time_plot(ds: xr.Dataset, url, params: Params):
     apply_to_map = pn.widgets.Checkbox(name='Apply to map', value=False)
 
     map_plot = pn.bind(
-        update_map,
+        map_plot,
         ds=ds,
         variable_selector=variable_selector,
         dim_name=dim_name,
