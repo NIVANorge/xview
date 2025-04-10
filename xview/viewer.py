@@ -146,7 +146,7 @@ def time_plot(variable_selector, ds, dim_name, start, end, step):
 
 
 @pn.cache
-def map_plot(ds, variable_selector, dim_name, end, start, step, apply_to_map):
+def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_map):
 
     var = variable_selector
     if "[" in var:
@@ -240,7 +240,7 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
     apply_to_map = pn.widgets.Checkbox(name='Apply to map', value=False)
 
     map_plot = pn.bind(
-        map_plot,
+        map_plot_widget,
         ds=ds,
         variable_selector=variable_selector,
         dim_name=dim_name,
