@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 DEFAULT_N_POINTS = 100000
 
+
 @dataclass
 class Params:
     current_param: str
@@ -29,16 +30,25 @@ def create_app():
     ds = xr.open_dataset(url)
 
     title, info, ds_pane = create_info(ds, url)
-    box = pn.FlexBox()
-    params = query_params(ds)
-    if len(ds.dims) > 1:
-        box.extend(
-            [title, info, ds_pane, data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."]
-        )
-    elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
+
+    if (len(ds.dims) == 1 and "time" in ds.dims) or (
+        len(ds.dims) == 1
+        and "featureType" in ds.attrs
+        and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]
+    ):
+        app = pn.FlexBox()
+        params = query_params(ds)
         map_col, plot_col = discrete_time_widgets(ds, url, params)
-        box.extend([title, pn.FlexBox(pn.Column(info, ds_pane, max_width=600), map_col, flex_direction="row"), plot_col])
-    return box
+        app.extend(
+            [title, pn.FlexBox(pn.Column(info, ds_pane, max_width=600), map_col, flex_direction="row"), plot_col]
+        )
+        return app
+
+    return pn.FlexBox(
+        pn.Column(
+            title, info, ds_pane, data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."
+        )
+    )
 
 
 def create_info(ds, url):
@@ -108,7 +118,6 @@ def query_params(ds):
     )
 
 
-
 def data_links(url, start=None, end=None, step=None):
     if isinstance(start, datetime):
         start = pd.to_datetime(start).strftime("%Y-%m-%dT%H:%M:%S")
@@ -146,7 +155,10 @@ def varname_from_selector(variable_selector):
 def time_plot_widget(variable_selector, ds, dim_name, start, end, step):
     var = varname_from_selector(variable_selector)
 
-    return sel(ds[var], dim_name, start, end, step).hvplot.scatter(x=dim_name, size=2.5, sizing_mode="stretch_width", min_height=400, max_height=600, responsive=True)
+    return sel(ds[var], dim_name, start, end, step).hvplot.scatter(
+        x=dim_name, size=2.5, sizing_mode="stretch_width", min_height=400, max_height=600, responsive=True
+    )
+
 
 @pn.cache
 def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_map):
@@ -206,6 +218,7 @@ def time_control_widgets(ds, params):
 
     return variable_selector, step_slider, start_slider, end_slider
 
+
 def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
 
     variable_selector, step_slider, start_slider, end_slider = time_control_widgets(ds, params)
@@ -226,7 +239,7 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
         step=step_slider,
     )
     download_binding = pn.bind(data_links, url=url, start=start_slider, end=end_slider, step=step_slider)
-    apply_to_map = pn.widgets.Checkbox(name='Apply to map', value=False)
+    apply_to_map = pn.widgets.Checkbox(name="Apply to map", value=False)
 
     map_plot = pn.bind(
         map_plot_widget,
