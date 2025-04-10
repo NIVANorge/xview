@@ -15,6 +15,31 @@ from dataclasses import dataclass
 
 DEFAULT_N_POINTS = 100000
 
+@dataclass
+class Params:
+    current_param: str
+    param_list: list[str]
+    start: datetime | int | None
+    end: datetime | int | None
+    step: str | int = 1
+
+
+def create_app():
+    url = urllib.parse.unquote(pn.state.session_args.get("url", [None])[0].decode("utf-8"))
+    ds = xr.open_dataset(url)
+
+    title, info, ds_pane = create_info(ds, url)
+    box = pn.FlexBox(justify_content="center", align_items="center")
+    params = query_params(ds)
+    if len(ds.dims) > 1:
+        box.extend(
+            [title, info, ds_pane, data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."]
+        )
+    elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
+        map_col, plot_col = discrete_time_widgets(ds, url, params)
+        box.extend([title, pn.Row(pn.Column(info, ds_pane), map_col), plot_col])
+    return box
+
 
 def create_info(ds, url):
 
@@ -31,33 +56,6 @@ def create_info(ds, url):
     )
 
     return pn.pane.Markdown(info_txt), pn.pane.Markdown(ds_txt), pn.panel(ds)
-
-
-def data_links(url, start=None, end=None, step=None):
-    if isinstance(start, datetime):
-        start = pd.to_datetime(start).strftime("%Y-%m-%dT%H:%M:%S")
-        end = pd.to_datetime(end).strftime("%Y-%m-%dT%H:%M:%S")
-
-    query_params = [f"{p}={v}" for p, v in [("start", start), ("end", end), ("step", step)] if v is not None]
-    query_string = "&" + "&".join(query_params) if query_params else ""
-    html_url = f"{SETTINGS.server_url}/xview/data?f=html&url={urllib.parse.quote(url)}{query_string}"
-    json_url = f"{SETTINGS.server_url}/xview/data?f=json&url={urllib.parse.quote(url)}{query_string}"
-    csv_url = f"{SETTINGS.server_url}/xview/data?f=csv&url={urllib.parse.quote(url)}{query_string}"
-
-    html_url = f"[{html_url}]({html_url})"
-    json_url = f"[{json_url}]({json_url})"
-    csv_url = f"[{csv_url}]({csv_url})"
-    txt = f"### Data Links\n" f"- **HTML:** {html_url}\n" f"- **JSON:** {json_url}\n" f"- **CSV:** {csv_url}\n"
-    return pn.pane.Markdown(txt)
-
-
-@dataclass
-class Params:
-    current_param: str
-    param_list: list[str]
-    start: datetime | int | None
-    end: datetime | int | None
-    step: str | int = 1
 
 
 def query_params(ds):
@@ -110,21 +108,23 @@ def query_params(ds):
     )
 
 
-def create_app():
-    url = urllib.parse.unquote(pn.state.session_args.get("url", [None])[0].decode("utf-8"))
-    ds = xr.open_dataset(url)
 
-    title, info, ds_pane = create_info(ds, url)
-    box = pn.FlexBox(justify_content="center", align_items="center")
-    params = query_params(ds)
-    if len(ds.dims) > 1:
-        box.extend(
-            [title, info, ds_pane, data_links(url), "### Plotting is only supported for 1D timeSeries or trajectory."]
-        )
-    elif "featureType" in ds.attrs and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]:
-        map_col, plot_col = discrete_time_widgets(ds, url, params)
-        box.extend([title, pn.Row(pn.Column(info, ds_pane), map_col), plot_col])
-    return box
+def data_links(url, start=None, end=None, step=None):
+    if isinstance(start, datetime):
+        start = pd.to_datetime(start).strftime("%Y-%m-%dT%H:%M:%S")
+        end = pd.to_datetime(end).strftime("%Y-%m-%dT%H:%M:%S")
+
+    query_params = [f"{p}={v}" for p, v in [("start", start), ("end", end), ("step", step)] if v is not None]
+    query_string = "&" + "&".join(query_params) if query_params else ""
+    html_url = f"{SETTINGS.server_url}/xview/data?f=html&url={urllib.parse.quote(url)}{query_string}"
+    json_url = f"{SETTINGS.server_url}/xview/data?f=json&url={urllib.parse.quote(url)}{query_string}"
+    csv_url = f"{SETTINGS.server_url}/xview/data?f=csv&url={urllib.parse.quote(url)}{query_string}"
+
+    html_url = f"[{html_url}]({html_url})"
+    json_url = f"[{json_url}]({json_url})"
+    csv_url = f"[{csv_url}]({csv_url})"
+    txt = f"### Data Links\n" f"- **HTML:** {html_url}\n" f"- **JSON:** {json_url}\n" f"- **CSV:** {csv_url}\n"
+    return pn.pane.Markdown(txt)
 
 
 @pn.cache
@@ -136,21 +136,22 @@ def sel(ds, dim_name, start, end, step):
     return ds.isel({dim_name: slice(start, end, step)})
 
 
+def varname_from_selector(variable_selector):
+    if "[" in variable_selector:
+        return variable_selector.split("[")[1].split("]")[0]
+    return variable_selector
+
+
 @pn.cache
 def time_plot_widget(variable_selector, ds, dim_name, start, end, step):
-    var = variable_selector
-    if "[" in var:
-        var = var.split("[")[1].split("]")[0]
+    var = varname_from_selector(variable_selector)
 
     return sel(ds[var], dim_name, start, end, step).hvplot.scatter(x=dim_name, size=2.5)
-
 
 @pn.cache
 def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_map):
 
-    var = variable_selector
-    if "[" in var:
-        var = var.split("[")[1].split("]")[0]
+    var = varname_from_selector(variable_selector)
 
     x = ds.cf["longitude"].name
     y = ds.cf["latitude"].name
@@ -186,17 +187,6 @@ def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_
     ).opts(default_span=800.0, width=800, responsive=True)
 
 
-@pn.cache
-def data_preview_table(ds, dim_name, start, end, step):
-    ds = sel(ds, dim_name, start, end, step)
-    return pn.widgets.Tabulator(
-        ds.isel({dim_name: slice(-100, None, None)}).to_dataframe()[::-1],
-        disabled=True,
-        height=400,
-        pagination="local",
-        page_size=50,
-    )
-
 def time_control_widgets(ds, params):
     variable_selector = pn.widgets.Select(name="Variable", options=params.param_list, value=params.current_param)
     step_slider = pn.widgets.IntSlider(name="plot every n point", value=params.step, start=1, end=100, step=10)
@@ -213,7 +203,6 @@ def time_control_widgets(ds, params):
             name="Start Range", start=0, end=len(ds.time) - 1, step=1, value=params.start
         )
         end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time) - 1, step=1, value=params.end)
-        print("start", params.end)
 
     return variable_selector, step_slider, start_slider, end_slider
 
