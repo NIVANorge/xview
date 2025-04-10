@@ -137,7 +137,7 @@ def sel(ds, dim_name, start, end, step):
 
 
 @pn.cache
-def time_plot(variable_selector, ds, dim_name, start, end, step):
+def time_plot_widget(variable_selector, ds, dim_name, start, end, step):
     var = variable_selector
     if "[" in var:
         var = var.split("[")[1].split("]")[0]
@@ -227,8 +227,8 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
         pn.state.location.sync(variable_selector, {"value": "parameter-name"})
 
     dim_name = next(iter(ds.dims))
-    binding_plot = pn.bind(
-        time_plot,
+    time_plot = pn.bind(
+        time_plot_widget,
         variable_selector=variable_selector,
         ds=ds,
         dim_name=dim_name,
@@ -256,6 +256,6 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
     )
 
     column = pn.Column(download_binding)
-    column.extend([controls, binding_plot])
+    column.extend([controls, time_plot])
 
     return pn.Column("### Map preview - default(end - 1 day)", map_plot), column
