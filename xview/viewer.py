@@ -31,11 +31,7 @@ def create_app():
 
     title, info, ds_pane = create_info(ds, url)
 
-    if (len(ds.dims) == 1 and "time" in ds.dims) or (
-        len(ds.dims) == 1
-        and "featureType" in ds.attrs
-        and ds.attrs["featureType"].lower() in ["timeseries", "trajectory"]
-    ):
+    if len(ds.dims) == 1 and time_dim_name(ds):
         app = pn.FlexBox()
         params = query_params(ds)
         map_col, plot_col = discrete_time_widgets(ds, url, params)
@@ -91,13 +87,14 @@ def query_params(ds):
         else:
             params["end"] = pd.to_datetime(params["end"])
 
+    dim_name = time_dim_name(ds)
     if "step" in params and params["step"].isdigit():
         params["step"] = int(params["step"])
 
-    if "start" not in params and "time" in ds.dims and len(ds.time) > DEFAULT_N_POINTS:
+    if "start" not in params and len(ds[dim_name]) > DEFAULT_N_POINTS:
         # If the dataset is large and no start time is provided, set a default start time
         if time_default:
-            params["start"] = pd.to_datetime(ds.time.values[-DEFAULT_N_POINTS])
+            params["start"] = pd.to_datetime(ds[dim_name].values[-DEFAULT_N_POINTS])
         else:
             params["start"] = -DEFAULT_N_POINTS
 
@@ -112,8 +109,8 @@ def query_params(ds):
     return Params(
         current_param=params["parameter-name"],
         param_list=param_list,
-        start=params.get("start", pd.to_datetime(ds.time.min().values) if time_default else 0),
-        end=params.get("end", pd.to_datetime(ds.time.max().values) if time_default else len(ds.time) - 1),
+        start=params.get("start", pd.to_datetime(ds[dim_name].min().values) if time_default else 0),
+        end=params.get("end", pd.to_datetime(ds[dim_name].max().values) if time_default else len(ds[dim_name]) - 1),
         step=params.get("step", 1),
     )
 
@@ -149,6 +146,18 @@ def varname_from_selector(variable_selector):
     if "[" in variable_selector:
         return variable_selector.split("[")[1].split("]")[0]
     return variable_selector
+
+
+def time_dim_name(ds) -> str:
+    if "time" in ds.cf:
+        return ds.cf["time"].name
+    if "T" in ds.cf.axes:
+        return ds.cf.axes["T"][0]
+    if "time" in ds.dims:
+        return "time"
+    if "TIME" in ds.dims:
+        return "TIME"
+    return ""
 
 
 @pn.cache
@@ -199,36 +208,38 @@ def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_
     ).opts(default_span=800.0, width=800, responsive=True)
 
 
-def time_control_widgets(ds, params):
+def time_control_widgets(ds, params, dim_name):
     variable_selector = pn.widgets.Select(name="Variable", options=params.param_list, value=params.current_param)
     step_slider = pn.widgets.IntSlider(name="plot every n point", value=params.step, start=1, end=100, step=10)
 
     if isinstance(params.start, datetime):
         start_slider = pn.widgets.DatetimeSlider(
-            name="Start Time", start=ds.time.min().values, end=ds.time.max().values, value=params.start
+            name="Start Time", start=ds[dim_name].min().values, end=ds[dim_name].max().values, value=params.start
         )
         end_slider = pn.widgets.DatetimeSlider(
-            name="End Time", start=ds.time.min().values, end=ds.time.max().values, value=params.end
+            name="End Time", start=ds[dim_name].min().values, end=ds[dim_name].max().values, value=params.end
         )
     else:
         start_slider = pn.widgets.IntSlider(
-            name="Start Range", start=0, end=len(ds.time) - 1, step=1, value=params.start
+            name="Start Range", start=0, end=len(ds[dim_name]) - 1, step=1, value=params.start
         )
-        end_slider = pn.widgets.IntSlider(name="End Range", start=0, end=len(ds.time) - 1, step=1, value=params.end)
+        end_slider = pn.widgets.IntSlider(
+            name="End Range", start=0, end=len(ds[dim_name]) - 1, step=1, value=params.end
+        )
 
     return variable_selector, step_slider, start_slider, end_slider
 
 
 def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
 
-    variable_selector, step_slider, start_slider, end_slider = time_control_widgets(ds, params)
+    dim_name = time_dim_name(ds)
+    variable_selector, step_slider, start_slider, end_slider = time_control_widgets(ds, params, dim_name)
 
     if pn.state.location:
         pn.state.location.sync(start_slider, {"value": "start"})
         pn.state.location.sync(end_slider, {"value": "end"})
         pn.state.location.sync(variable_selector, {"value": "parameter-name"})
 
-    dim_name = next(iter(ds.dims))
     time_plot = pn.bind(
         time_plot_widget,
         variable_selector=variable_selector,
