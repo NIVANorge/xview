@@ -164,8 +164,11 @@ def time_dim_name(ds) -> str:
 def time_plot_widget(variable_selector, ds, dim_name, start, end, step):
     var = varname_from_selector(variable_selector)
 
+    point_size = 2.5
+    if ds[var].size < 10000:
+        point_size = 50
     return sel(ds[var], dim_name, start, end, step).hvplot.scatter(
-        x=dim_name, size=2.5, sizing_mode="stretch_width", min_height=400, max_height=600, responsive=True
+        x=dim_name, size=point_size, sizing_mode="stretch_width", min_height=400, max_height=600, responsive=True
     )
 
 
@@ -189,6 +192,13 @@ def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_
     df = ds.sel({dim_name: slice(start, end)}).isel({dim_name: slice(None, None, step)}).to_dataframe()
     if len(df) == 0:
         return pn.pane.Markdown(f"No data in range {start} - {end}")
+
+    is_cbar = True
+    point_size = 15
+    if ds.cf["longitude"].size == 1:
+        is_cbar = False
+        point_size = 150
+
     return (
         df.hvplot.points(
             x=x,
@@ -198,9 +208,9 @@ def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_
             geo=True,
             tiles="OSM",
             cmap="viridis",
-            size=10,
+            size=point_size,
             height=600,
-            colorbar=True,
+            colorbar=is_cbar,
             clabel=f"{ds[var].attrs.get('long_name', var)}[{ds[var].attrs.get('units', '')}]",
             min_width=200,
             max_width=800,
