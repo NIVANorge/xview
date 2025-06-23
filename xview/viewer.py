@@ -164,7 +164,7 @@ def time_dim_name(ds) -> str:
 def time_plot_widget(variable_selector, ds, dim_name, start, end, step):
     var = varname_from_selector(variable_selector)
 
-    point_size = 2.5
+    point_size = 5
     if ds[var].size < 10000:
         point_size = 50
     return sel(ds[var], dim_name, start, end, step).hvplot.scatter(
@@ -195,7 +195,9 @@ def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_
 
     is_cbar = True
     point_size = 15
+    hover_cols = [dim_name, x, y, var]
     if ds.cf["longitude"].size == 1:
+        hover_cols = [x, y]
         is_cbar = False
         point_size = 150
 
@@ -204,7 +206,7 @@ def map_plot_widget(ds, variable_selector, dim_name, end, start, step, apply_to_
             x=x,
             y=y,
             c=var,
-            hover_cols=[dim_name, x, y, var],
+            hover_cols=hover_cols,
             geo=True,
             tiles="OSM",
             cmap="viridis",
@@ -260,7 +262,13 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
         step=step_slider,
     )
     download_binding = pn.bind(data_links, url=url, start=start_slider, end=end_slider, step=step_slider)
-    apply_to_map = pn.widgets.Checkbox(name="Apply to map", value=False)
+
+    map_title = "### Location"
+    apply_to_map = None
+    if ds.cf["longitude"].size > 1:
+        apply_to_map = pn.widgets.Checkbox(name="Apply to map", value=False)
+        map_title = "### Map Preview (default is 24 hours)"
+    
 
     map_plot = pn.bind(
         map_plot_widget,
@@ -281,4 +289,4 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
     time_box = pn.FlexBox(sizing_mode="stretch_width")
     time_box.extend([*controls, download_binding, time_plot])
 
-    return pn.Column("### Map preview - default(end - 1 day)", map_plot), time_box
+    return pn.Column(map_title, map_plot), time_box
