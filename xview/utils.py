@@ -11,6 +11,7 @@ import elementpath
 from lxml import etree
 from urllib.parse import urlparse
 
+
 def subset(
     ds: xr.Dataset,
     vars,
@@ -24,9 +25,9 @@ def subset(
         return ds
     if isinstance(start, datetime):
         ds = ds.sel(time=slice(start, end))
+        return ds.isel(time=slice(None, None, step))
     else:
-        ds = ds.isel(time=slice(start, end, step))
-    return ds.isel(time=slice(None, None, step))
+        return ds.isel(time=slice(start, end, step))
 
 
 def bytes_to_str(ds: xr.Dataset) -> xr.Dataset:

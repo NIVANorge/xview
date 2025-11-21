@@ -8,17 +8,19 @@ import json
 import panel as pn
 from typing import Annotated
 from bokeh.embed import server_document
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.templating import Jinja2Templates
 from xview.viewer import create_app
 from xview import utils
 import panel as pn
 from datetime import datetime
-
+from pydantic import BeforeValidator
+from typing import Union
 import cf_xarray
 import xarray as xr
 from fastapi.responses import Response
 from xview.config import SETTINGS
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,13 +38,29 @@ app = FastAPI(
 templates = Jinja2Templates(directory="templates")
 
 
+def parse_slice_param(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, datetime)):
+        return value
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid value for time/index: {value}")
+
+StartEndParam = Annotated[Union[int, datetime, None], BeforeValidator(parse_slice_param)]
+
 @app.get("/panel")
 async def xview(
     url: Annotated[str, Query(description="OPeNDAP URL")],
     request: Request,
     param_name: Annotated[str, Query(alias="parameter-name", description="Data variables to plot")] = "",
-    start: Annotated[datetime | int | None, Query(description="Start time in ISO 8601 or index")] = None,
-    end: Annotated[datetime | int | None, Query(description="End time in ISO 8601 or index")] = None,
+    start: Annotated[StartEndParam, Query(description="Start time in ISO 8601 or index")] = None,
+    end: Annotated[StartEndParam, Query(description="End time in ISO 8601 or index")] = None,
     step: Annotated[int | None, Query(description="Select every step number of points between start and stop")] = None,
 ):
     """
@@ -66,8 +84,8 @@ async def xview(
 async def xdata_url(
     url: Annotated[str, Query(description="OPeNDAP URL")],
     param_name: Annotated[str, Query(alias="parameter-name", description="Data variables in dataset to return, comma separated string")] = None,
-    start: Annotated[datetime | int, Query(description="Start time in ISO 8601 or index")] = None,
-    end: Annotated[datetime | int, Query(description="End time in ISO 8601 or index")] = None,
+    start: Annotated[StartEndParam, Query(description="Start time in ISO 8601 or index")] = None,
+    end: Annotated[StartEndParam, Query(description="End time in ISO 8601 or index")] = None,
     step: Annotated[int, Query(description="Step size")] = None,
     f: Annotated[str, Query(description="Output format", pattern="^(html|json|csv)$")] = "html",
     exclude_data: Annotated[bool, Query(alias="exclude-data", description="Exclude data from json output")] = False,
@@ -79,7 +97,7 @@ async def xdata_url(
 
     For large datasets, the exclude-data parameter can be used to exclude the data from the json output.
     This is useful for fetching the size and requesting the data in smaller batches using the start and end index parameters,
-    indexing is 0-based. 
+    indexing is 0-based. Indexing from the end is supported using negative indices [e.g. -1 is the last point].
 
     Currently only the time dimension is supported for start, end and step.
 
