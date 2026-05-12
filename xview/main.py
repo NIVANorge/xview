@@ -6,6 +6,7 @@ import sys
 import xarray as xr
 import json
 import panel as pn
+import pandas as pd
 from typing import Annotated
 from bokeh.embed import server_document
 from fastapi import FastAPI, Request, Query, HTTPException
@@ -92,8 +93,7 @@ async def xdata_url(
 ):
     """
     Convert a dataset into csv, json or html.
-    The timeSeries and trajectory featureTypes are supported in simple"
-    form."
+    The timeSeries, trajectory and timeSeriesProfile featureTypes are supported.
 
     For large datasets, the exclude-data parameter can be used to exclude the data from the json output.
     This is useful for fetching the size and requesting the data in smaller batches using the start and end index parameters,
@@ -104,10 +104,15 @@ async def xdata_url(
     Returns:
         Data in the requested format (json, csv, html) based on the f parameter.
     """
-    
+
     if start is not None and end is not None and type(start) != type(end):
         return Response(content="start and end must be of the same type if both are provided", status_code=400)
+
     ds = xr.open_dataset(url)
+
+    if utils.is_ragged_tsp(ds):
+        return _ragged_tsp_response(ds, param_name, start, end, f)
+
     ds = utils.subset(ds, param_name, start, end, step)
     ds = utils.to_json_types(ds, fill_nan=f == "json")
     if f == "json":
@@ -119,6 +124,41 @@ async def xdata_url(
         return Response(content=ds.to_dataframe().to_csv(), media_type="text/csv")
     else:
         return Response(content=ds.to_dataframe().to_html(), media_type="text/html")
+
+
+def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str) -> Response:
+    """Expand a ragged-array timeSeriesProfile and return the requested format."""
+    df = utils.expand_ragged_tsp(ds)
+
+    # Filter columns to requested variables (keep all coordinate-like columns)
+    if param_name:
+        requested = {v.strip() for v in param_name.split(",")}
+        coord_cols = {c for c in df.columns if c not in ds.data_vars or ds[c].attrs.get("cf_role")}
+        keep = coord_cols | (requested & set(df.columns))
+        df = df[[c for c in df.columns if c in keep]]
+
+    # Filter by time range
+    time_col = next((c for c in df.columns if c in ("time", "TIME")), None)
+    if time_col and isinstance(start, datetime):
+        df[time_col] = pd.to_datetime(df[time_col])
+        if start is not None:
+            df = df[df[time_col] >= start]
+        if end is not None:
+            df = df[df[time_col] <= end]
+
+    # Convert datetime columns to ISO strings for JSON/HTML
+    for col in df.select_dtypes(include=["datetime64[ns]", "datetimetz"]).columns:
+        df[col] = df[col].dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+    if f == "json":
+        return Response(
+            content=df.to_json(orient="records", date_format="iso"),
+            media_type="application/json",
+        )
+    elif f == "csv":
+        return Response(content=df.to_csv(index=False), media_type="text/csv")
+    else:
+        return Response(content=df.to_html(index=False), media_type="text/html")
     
  
 @app.get("/health")

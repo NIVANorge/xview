@@ -1,4 +1,6 @@
 import xarray as xr
+import cf_xarray  # noqa: F401 – registers the .cf accessor
+import numpy as np
 from typing import Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -12,6 +14,148 @@ from lxml import etree
 from urllib.parse import urlparse
 
 
+# ---------------------------------------------------------------------------
+# Dimension/coordinate helpers
+# ---------------------------------------------------------------------------
+
+
+def time_dim_name(ds: xr.Dataset) -> str:
+    """Return the name of the time dimension, or '' if not found."""
+    if "time" in ds.cf:
+        return ds.cf["time"].name
+    if "T" in ds.cf.axes:
+        return ds.cf.axes["T"][0]
+    if "time" in ds.dims:
+        return "time"
+    if "TIME" in ds.dims:
+        return "TIME"
+    return ""
+
+
+def depth_dim_name(ds: xr.Dataset) -> str:
+    """Return the name of the vertical/depth dimension, or '' if not found."""
+    if "Z" in ds.cf.axes:
+        return ds.cf.axes["Z"][0]
+    for name in ("depth", "DEPTH", "z", "altitude", "level", "lev"):
+        if name in ds.dims:
+            return name
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Ragged-array timeSeriesProfile helpers (CF H.5.3)
+# ---------------------------------------------------------------------------
+
+
+def is_ragged_tsp(ds: xr.Dataset) -> bool:
+    """Return True if *ds* uses a ragged-array timeSeriesProfile layout.
+
+    Detects the presence of a counting variable that carries the
+    ``sample_dimension`` CF attribute (e.g. ``rowSize``).
+    """
+    return any("sample_dimension" in ds[v].attrs for v in ds.data_vars)
+
+
+def ragged_counting_vars(ds: xr.Dataset) -> tuple[str | None, str | None]:
+    """Return ``(row_size_var, station_index_var)`` names.
+
+    ``station_index_var`` is ``None`` for single-station ragged arrays.
+    """
+    row_size_var = next(
+        (v for v in ds.data_vars if "sample_dimension" in ds[v].attrs), None
+    )
+    station_index_var = next(
+        (v for v in ds.data_vars if "instance_dimension" in ds[v].attrs), None
+    )
+    return row_size_var, station_index_var
+
+
+def _decode_bytes(arr: np.ndarray) -> np.ndarray:
+    """Decode a numpy array of byte strings to Unicode strings.
+
+    Tries UTF-8 first, falls back to Latin-1 (covers Norwegian/Western-European
+    characters stored as single-byte encodings, e.g. ``ø`` = 0xf8 in Latin-1).
+    """
+    if arr.dtype.kind == "S":
+        # Fixed-length byte strings (b'...')
+        try:
+            return arr.astype("U")
+        except UnicodeDecodeError:
+            return np.array([v.decode("latin-1") for v in arr])
+    if arr.dtype == object:
+        decoded = []
+        for v in arr:
+            if isinstance(v, (bytes, np.bytes_)):
+                try:
+                    decoded.append(v.decode("utf-8"))
+                except UnicodeDecodeError:
+                    decoded.append(v.decode("latin-1"))
+            else:
+                decoded.append(v)
+        return np.array(decoded, dtype=object)
+    return arr
+
+
+def expand_ragged_tsp(ds: xr.Dataset) -> pd.DataFrame:
+    """Expand a ragged-array timeSeriesProfile dataset into a flat DataFrame.
+
+    Handles both H.5.3 (indexed + contiguous ragged, multi-station) and
+    simpler single-station contiguous ragged arrays.
+    """
+    row_size_var, station_index_var = ragged_counting_vars(ds)
+    if row_size_var is None:
+        raise ValueError("No variable with 'sample_dimension' attribute found in dataset")
+
+    obs_dim = ds[row_size_var].attrs["sample_dimension"]
+    profile_dim = ds[row_size_var].dims[0]
+
+    row_sizes = ds[row_size_var].values.astype(int)
+    profile_of_obs = np.repeat(np.arange(len(row_sizes)), row_sizes)
+
+    result: dict[str, np.ndarray] = {}
+    skip = {row_size_var, station_index_var}
+
+    # Station-level variables → broadcast through stationIndex → obs
+    if station_index_var is not None:
+        instance_dim = ds[station_index_var].attrs["instance_dimension"]
+        stn_of_obs = ds[station_index_var].values[profile_of_obs]
+        for v in list(ds.data_vars) + list(ds.coords):
+            if v not in ds:
+                continue
+            if ds[v].dims == (instance_dim,):
+                result[v] = _decode_bytes(ds[v].values)[stn_of_obs]
+
+    # Profile-level variables (time, etc.) → repeat per obs
+    for v in list(ds.data_vars) + list(ds.coords):
+        if v not in ds or v in skip:
+            continue
+        if ds[v].dims == (profile_dim,):
+            result[v] = ds[v].values[profile_of_obs]
+
+    # Obs-level variables (depth, data variables)
+    for v in list(ds.data_vars) + list(ds.coords):
+        if v not in ds or v == row_size_var:
+            continue
+        if ds[v].dims == (obs_dim,):
+            result[v] = ds[v].values
+
+    df = pd.DataFrame(result)
+
+    # Ensure any remaining byte-string columns are decoded to str
+    for col in df.columns:
+        if df[col].dtype.kind == "S" or (
+            df[col].dtype == object and df[col].apply(lambda v: isinstance(v, (bytes, np.bytes_))).any()
+        ):
+            df[col] = _decode_bytes(df[col].values)
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Subsetting
+# ---------------------------------------------------------------------------
+
+
 def subset(
     ds: xr.Dataset,
     vars,
@@ -21,13 +165,14 @@ def subset(
 ) -> xr.Dataset:
     if vars:
         ds = ds[[v for v in ds.data_vars if v in vars]]
-    if "time" not in ds.dims:
+    dim_name = time_dim_name(ds)
+    if not dim_name:
         return ds
     if isinstance(start, datetime):
-        ds = ds.sel(time=slice(start, end))
-        return ds.isel(time=slice(None, None, step))
+        ds = ds.sel({dim_name: slice(start, end)})
+        return ds.isel({dim_name: slice(None, None, step)})
     else:
-        return ds.isel(time=slice(start, end, step))
+        return ds.isel({dim_name: slice(start, end, step)})
 
 
 def bytes_to_str(ds: xr.Dataset) -> xr.Dataset:

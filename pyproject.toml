@@ -24,6 +24,7 @@ lxml = "^5.3.1"
 elementpath = "^4.8.0"
 geoviews = "^1.14.0"
 geopandas = "^1.0.1"
+datashader = "^0.19.0"
 
 [tool.poetry.group.dev.dependencies]
 isort = "^5.13.2"
