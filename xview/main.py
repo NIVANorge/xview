@@ -139,20 +139,17 @@ def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeser
     """Expand a ragged-array timeSeriesProfile and return the requested format."""
     df = utils.expand_ragged_tsp(ds)
 
-    # Filter rows to the requested timeseries_id station
     if timeseries_id is not None:
         stn_id_var = utils.get_timeseries_id_var(ds)
         if stn_id_var and stn_id_var in df.columns:
             df = df[df[stn_id_var] == timeseries_id]
 
-    # Filter columns to requested variables (keep all coordinate-like columns)
     if param_name:
         requested = {v.strip() for v in param_name.split(",")}
         coord_cols = {c for c in df.columns if c not in ds.data_vars or ds[c].attrs.get("cf_role")}
         keep = coord_cols | (requested & set(df.columns))
         df = df[[c for c in df.columns if c in keep]]
 
-    # Filter by time range
     time_col = next((c for c in df.columns if c in ("time", "TIME")), None)
     if time_col and isinstance(start, datetime):
         df[time_col] = pd.to_datetime(df[time_col])
@@ -162,8 +159,6 @@ def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeser
             df = df[df[time_col] <= end]
 
     if f == "json":
-        # Build an xarray Dataset from the filtered DataFrame so the JSON output
-        # matches the standard xarray format (coords, attrs, dims, data_vars).
         ds_out = xr.Dataset(
             {col: xr.DataArray(df[col].values, dims=["obs"]) for col in df.columns}
         )
@@ -177,7 +172,6 @@ def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeser
             media_type="application/json",
         )
 
-    # Convert datetime columns to ISO strings for CSV/HTML
     for col in df.select_dtypes(include=["datetime64[ns]", "datetimetz"]).columns:
         df[col] = df[col].dt.strftime("%Y-%m-%dT%H:%M:%S")
 
