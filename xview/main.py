@@ -113,14 +113,14 @@ async def xdata_url(
     ds = xr.open_dataset(url)
 
     if utils.is_ragged_tsp(ds):
-        return _ragged_tsp_response(ds, param_name, start, end, f, timeseries_id)
+        return _ragged_tsp_response(ds, param_name, start, end, f, timeseries_id, exclude_data)
 
     if timeseries_id is not None:
         try:
             ds = utils.subset_by_timeseries_id(ds, timeseries_id)
         except ValueError as e:
             return Response(content=str(e), status_code=404)
-        return _ragged_tsp_response(ds, param_name, start, end, f, timeseries_id)
+        return _ragged_tsp_response(ds, param_name, start, end, f, timeseries_id, exclude_data)
 
     ds = utils.subset(ds, param_name, start, end, step)
     ds = utils.to_json_types(ds, fill_nan=f == "json")
@@ -135,7 +135,7 @@ async def xdata_url(
         return Response(content=ds.to_dataframe().to_html(), media_type="text/html")
 
 
-def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeseries_id: str | None = None) -> Response:
+def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeseries_id: str | None = None, exclude_data: bool = False) -> Response:
     """Expand a ragged-array timeSeriesProfile and return the requested format."""
     df = utils.expand_ragged_tsp(ds)
 
@@ -161,16 +161,27 @@ def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeser
         if end is not None:
             df = df[df[time_col] <= end]
 
-    # Convert datetime columns to ISO strings for JSON/HTML
+    if f == "json":
+        # Build an xarray Dataset from the filtered DataFrame so the JSON output
+        # matches the standard xarray format (coords, attrs, dims, data_vars).
+        ds_out = xr.Dataset(
+            {col: xr.DataArray(df[col].values, dims=["obs"]) for col in df.columns}
+        )
+        for var in list(ds_out.data_vars) + list(ds_out.coords):
+            if var in ds:
+                ds_out[var].attrs = ds[var].attrs
+        ds_out.attrs = ds.attrs
+        ds_out = utils.to_json_types(ds_out, fill_nan=True)
+        return Response(
+            content=json.dumps(ds_out.to_dict(data=False if exclude_data else "list")),
+            media_type="application/json",
+        )
+
+    # Convert datetime columns to ISO strings for CSV/HTML
     for col in df.select_dtypes(include=["datetime64[ns]", "datetimetz"]).columns:
         df[col] = df[col].dt.strftime("%Y-%m-%dT%H:%M:%S")
 
-    if f == "json":
-        return Response(
-            content=df.to_json(orient="records", date_format="iso"),
-            media_type="application/json",
-        )
-    elif f == "csv":
+    if f == "csv":
         return Response(content=df.to_csv(index=False), media_type="text/csv")
     else:
         return Response(content=df.to_html(index=False), media_type="text/html")

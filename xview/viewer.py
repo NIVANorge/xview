@@ -149,7 +149,7 @@ def data_links(url, start=None, end=None, step=None, timeseries_id=None):
         end = pd.to_datetime(end).strftime("%Y-%m-%dT%H:%M:%S")
 
     query_params = [
-        f"{p}={v}"
+        f"{p}={urllib.parse.quote(str(v))}"
         for p, v in [("start", start), ("end", end), ("step", step), ("timeseries-id", timeseries_id)]
         if v is not None
     ]
@@ -668,6 +668,18 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
             pn.state.location.sync(station_selector, {"value": "timeseries-id"})
         controls.append(pn.Column("### Station", station_selector))
 
+        # Only include timeseries_id in data links once the user has explicitly
+        # selected a station (or if one was already present in the URL).
+        _explicit = [raw is not None]
+        station_selector.param.watch(lambda e: _explicit.__setitem__(0, True), "value")
+
+        def _station_for_links(station):
+            return station if _explicit[0] else None
+
+        link_station = pn.bind(_station_for_links, station_selector)
+    else:
+        link_station = None
+
     plot = pn.bind(
         tsp_ragged_plot_widget,
         station=station_selector,
@@ -681,7 +693,7 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
     download_binding = pn.bind(
         data_links,
         url=url,
-        timeseries_id=station_selector,
+        timeseries_id=link_station,
     )
 
     plot_box = pn.FlexBox(sizing_mode="stretch_width")
