@@ -49,6 +49,15 @@ def create_app():
         )
         return app
 
+    stn_id_var = utils.get_timeseries_id_var(ds)
+    if stn_id_var is not None and ds[stn_id_var].ndim == 1 and utils.time_dim_name(ds) and not utils.depth_dim_name(ds):
+        app = pn.FlexBox()
+        map_col, plot_col = multi_station_time_widgets(ds, url)
+        app.extend(
+            [title, pn.FlexBox(pn.Column(info, ds_pane, max_width=600), map_col, flex_direction="row"), plot_col]
+        )
+        return app
+
     if utils.time_dim_name(ds) and utils.depth_dim_name(ds):
         app = pn.FlexBox()
         params = query_params(ds)
@@ -134,12 +143,16 @@ def query_params(ds):
     )
 
 
-def data_links(url, start=None, end=None, step=None):
+def data_links(url, start=None, end=None, step=None, timeseries_id=None):
     if isinstance(start, datetime):
         start = pd.to_datetime(start).strftime("%Y-%m-%dT%H:%M:%S")
         end = pd.to_datetime(end).strftime("%Y-%m-%dT%H:%M:%S")
 
-    query_params = [f"{p}={v}" for p, v in [("start", start), ("end", end), ("step", step)] if v is not None]
+    query_params = [
+        f"{p}={v}"
+        for p, v in [("start", start), ("end", end), ("step", step), ("timeseries-id", timeseries_id)]
+        if v is not None
+    ]
     query_string = "&" + "&".join(query_params) if query_params else ""
     html_url = f"{SETTINGS.server_url}/xview/data?f=html&url={urllib.parse.quote(url)}{query_string}"
     json_url = f"{SETTINGS.server_url}/xview/data?f=json&url={urllib.parse.quote(url)}{query_string}"
@@ -303,6 +316,121 @@ def discrete_time_widgets(ds: xr.Dataset, url, params: Params):
     return pn.Column(map_title, map_plot), time_box
 
 
+def _multi_station_map_widget(ds: xr.Dataset, stn_id_var: str) -> pn.viewable.Viewable:
+    """Static map showing all station locations for a multi-station timeseries dataset."""
+    stn_dim = ds[stn_id_var].dims[0]
+
+    lat_var = next(
+        (v for v in list(ds.data_vars) + list(ds.coords)
+         if v in ds and ds[v].dims == (stn_dim,)
+         and ds[v].attrs.get("standard_name", "").lower() == "latitude"),
+        next((v for v in ("lat", "latitude", "LAT") if v in ds and ds[v].dims == (stn_dim,)), None),
+    )
+    lon_var = next(
+        (v for v in list(ds.data_vars) + list(ds.coords)
+         if v in ds and ds[v].dims == (stn_dim,)
+         and ds[v].attrs.get("standard_name", "").lower() == "longitude"),
+        next((v for v in ("lon", "longitude", "LON") if v in ds and ds[v].dims == (stn_dim,)), None),
+    )
+
+    if lat_var is None or lon_var is None:
+        lat = ds.attrs.get("geospatial_lat_min") or ds.attrs.get("geospatial_lat_max")
+        lon = ds.attrs.get("geospatial_lon_min") or ds.attrs.get("geospatial_lon_max")
+        if lat is None or lon is None:
+            return pn.pane.Markdown("### Location\nNo location data available.")
+        location_df = pd.DataFrame({"lon": [float(lon)], "lat": [float(lat)]})
+        plot = location_df.hvplot.points(
+            x="lon", y="lat", geo=True, tiles="OSM", size=150, color="red",
+            hover_cols=["lat", "lon"], height=400, width=500,
+        )
+        return pn.Column("### Location", plot)
+
+    location_df = pd.DataFrame({
+        "lat": ds[lat_var].values.astype(float),
+        "lon": ds[lon_var].values.astype(float),
+    })
+    if stn_id_var in ds:
+        location_df["station"] = utils._decode_bytes(ds[stn_id_var].values)
+
+    hover_cols = [c for c in ("lat", "lon", "station") if c in location_df.columns]
+    plot = location_df.hvplot.points(
+        x="lon", y="lat", geo=True, tiles="OSM", size=80, color="red",
+        hover_cols=hover_cols, height=400, width=500,
+    )
+    return pn.Column("### Station Locations", plot)
+
+
+@pn.cache
+def multi_station_time_plot_widget(variable_selector, station, ds, dim_name, start, end, step):
+    var = varname_from_selector(variable_selector)
+    ds_sub = utils.subset_by_timeseries_id(ds, station)
+    point_size = 5
+    if ds_sub[var].size < 10000:
+        point_size = 50
+    return sel(ds_sub[var], dim_name, start, end, step).hvplot.scatter(
+        x=dim_name, size=point_size, sizing_mode="stretch_width", min_height=400, max_height=600, responsive=True
+    )
+
+
+def multi_station_time_widgets(ds: xr.Dataset, url: str):
+    """Widgets for an orthogonal multi-station timeseries dataset."""
+    stn_id_var = utils.get_timeseries_id_var(ds)
+    stations = utils._decode_bytes(ds[stn_id_var].values).tolist()
+
+    raw = pn.state.session_args.get("timeseries-id", [None])[0]
+    selected = raw.decode("utf-8") if raw else stations[0]
+    if selected not in stations:
+        selected = stations[0]
+
+    station_selector = pn.widgets.Select(name="Station", options=stations, value=selected)
+
+    if pn.state.location:
+        pn.state.location.sync(station_selector, {"value": "timeseries-id"})
+
+    # Subset to the initial station to derive time-range params; all stations
+    # share the same time axis in an orthogonal timeseries dataset.
+    ds_sub = utils.subset_by_timeseries_id(ds, selected)
+    dim_name = utils.time_dim_name(ds_sub)
+    params = query_params(ds_sub)
+
+    variable_selector, step_slider, start_slider, end_slider = time_control_widgets(ds_sub, params, dim_name)
+
+    if pn.state.location:
+        pn.state.location.sync(start_slider, {"value": "start"})
+        pn.state.location.sync(end_slider, {"value": "end"})
+        pn.state.location.sync(variable_selector, {"value": "parameter-name"})
+
+    time_plot = pn.bind(
+        multi_station_time_plot_widget,
+        variable_selector=variable_selector,
+        station=station_selector,
+        ds=ds,
+        dim_name=dim_name,
+        start=start_slider,
+        end=end_slider,
+        step=step_slider,
+    )
+    download_binding = pn.bind(
+        data_links,
+        url=url,
+        start=start_slider,
+        end=end_slider,
+        step=step_slider,
+        timeseries_id=station_selector,
+    )
+
+    controls = [
+        pn.Column("### Station", station_selector),
+        pn.Column("### Controls", variable_selector, step_slider),
+        pn.Column("### Time Range", start_slider, end_slider),
+    ]
+
+    time_box = pn.FlexBox(sizing_mode="stretch_width")
+    time_box.extend([*controls, download_binding, time_plot])
+
+    return _multi_station_map_widget(ds, stn_id_var), time_box
+
+
 # ---------------------------------------------------------------------------
 # Orthogonal timeSeriesProfile (time × depth 2-D grid)
 # ---------------------------------------------------------------------------
@@ -408,6 +536,12 @@ def tsp_ragged_plot_widget(station, variable_selector, url, dim_time, dim_depth,
     if len(plot_df) == 0:
         return pn.pane.Markdown("No data for the selected station.")
 
+    if var in plot_df.columns:
+        plot_df = plot_df.dropna(subset=[var])
+
+    if len(plot_df) == 0:
+        return pn.pane.Markdown(f"No non-NaN values for **{var}** at the selected station.")
+
     if dim_time and dim_time in plot_df.columns:
         plot_df[dim_time] = pd.to_datetime(plot_df[dim_time])
 
@@ -436,7 +570,6 @@ def _tsp_ragged_map_widget(ds: xr.Dataset, station_index_var: str | None, stn_id
 
     instance_dim = ds[station_index_var].attrs["instance_dimension"]
 
-    # Find lat/lon on the instance dimension
     lat_var = next(
         (v for v in list(ds.data_vars) + list(ds.coords)
          if v in ds and ds[v].dims == (instance_dim,)
@@ -482,14 +615,12 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
 
     skip = {row_size_var, station_index_var}
 
-    # Data variables are those on the obs dimension (excluding counting vars and QC flags)
     param_list = [
         f"{ds[v].attrs['long_name']}[{v}]" if "long_name" in ds[v].attrs else v
         for v in ds.data_vars
         if ds[v].dims == (obs_dim,) and v not in skip and not v.endswith("_qc")
     ]
 
-    # Find depth variable on obs dimension
     depth_var = next(
         (v for v in list(ds.data_vars) + list(ds.coords)
          if v in ds and v not in skip
@@ -502,7 +633,6 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
         ),
     )
 
-    # Find time variable on profile dimension (must be datetime-typed)
     time_var = next(
         (v for v in list(ds.data_vars) + list(ds.coords)
          if v in ds and ds[v].dims == (profile_dim,) and ds[v].dtype.kind == "M"),
@@ -512,7 +642,6 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
         ),
     )
 
-    # Station identifier variable (cf_role = 'timeseries_id')
     stn_id_var = next(
         (v for v in list(ds.data_vars) + list(ds.coords)
          if v in ds and ds[v].attrs.get("cf_role") == "timeseries_id"),
@@ -530,7 +659,13 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
             v.decode("latin-1") if isinstance(v, (bytes, np.bytes_)) else str(v)
             for v in ds[stn_id_var].values
         ]
-        station_selector = pn.widgets.Select(name="Station", options=stations, value=stations[0])
+        raw = pn.state.session_args.get("timeseries-id", [None])[0]
+        selected = raw.decode("utf-8") if raw else stations[0]
+        if selected not in stations:
+            selected = stations[0]
+        station_selector = pn.widgets.Select(name="Station", options=stations, value=selected)
+        if pn.state.location:
+            pn.state.location.sync(station_selector, {"value": "timeseries-id"})
         controls.append(pn.Column("### Station", station_selector))
 
     plot = pn.bind(
@@ -543,8 +678,14 @@ def tsp_ragged_widgets(ds: xr.Dataset, url: str):
         stn_id_var=stn_id_var,
     )
 
+    download_binding = pn.bind(
+        data_links,
+        url=url,
+        timeseries_id=station_selector,
+    )
+
     plot_box = pn.FlexBox(sizing_mode="stretch_width")
-    plot_box.extend([*controls, data_links(url), plot])
+    plot_box.extend([*controls, download_binding, plot])
 
     map_col = _tsp_ragged_map_widget(ds, station_index_var, stn_id_var)
     return map_col, plot_box

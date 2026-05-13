@@ -63,6 +63,7 @@ async def xview(
     start: Annotated[StartEndParam, Query(description="Start time in ISO 8601 or index")] = None,
     end: Annotated[StartEndParam, Query(description="End time in ISO 8601 or index")] = None,
     step: Annotated[int | None, Query(description="Select every step number of points between start and stop")] = None,
+    timeseries_id: Annotated[str | None, Query(alias="timeseries-id", description="Subset to a specific timeseries_id (cf_role=timeseries_id)")] = None,
 ):
     """
     Render of a panel preview using xarray.
@@ -90,6 +91,7 @@ async def xdata_url(
     step: Annotated[int, Query(description="Step size")] = None,
     f: Annotated[str, Query(description="Output format", pattern="^(html|json|csv)$")] = "html",
     exclude_data: Annotated[bool, Query(alias="exclude-data", description="Exclude data from json output")] = False,
+    timeseries_id: Annotated[str | None, Query(alias="timeseries-id", description="Subset to a specific timeseries_id (cf_role=timeseries_id)")] = None,
 ):
     """
     Convert a dataset into csv, json or html.
@@ -111,7 +113,14 @@ async def xdata_url(
     ds = xr.open_dataset(url)
 
     if utils.is_ragged_tsp(ds):
-        return _ragged_tsp_response(ds, param_name, start, end, f)
+        return _ragged_tsp_response(ds, param_name, start, end, f, timeseries_id)
+
+    if timeseries_id is not None:
+        try:
+            ds = utils.subset_by_timeseries_id(ds, timeseries_id)
+        except ValueError as e:
+            return Response(content=str(e), status_code=404)
+        return _ragged_tsp_response(ds, param_name, start, end, f, timeseries_id)
 
     ds = utils.subset(ds, param_name, start, end, step)
     ds = utils.to_json_types(ds, fill_nan=f == "json")
@@ -126,9 +135,15 @@ async def xdata_url(
         return Response(content=ds.to_dataframe().to_html(), media_type="text/html")
 
 
-def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str) -> Response:
+def _ragged_tsp_response(ds: xr.Dataset, param_name, start, end, f: str, timeseries_id: str | None = None) -> Response:
     """Expand a ragged-array timeSeriesProfile and return the requested format."""
     df = utils.expand_ragged_tsp(ds)
+
+    # Filter rows to the requested timeseries_id station
+    if timeseries_id is not None:
+        stn_id_var = utils.get_timeseries_id_var(ds)
+        if stn_id_var and stn_id_var in df.columns:
+            df = df[df[stn_id_var] == timeseries_id]
 
     # Filter columns to requested variables (keep all coordinate-like columns)
     if param_name:

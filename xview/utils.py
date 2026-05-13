@@ -14,11 +14,6 @@ from lxml import etree
 from urllib.parse import urlparse
 
 
-# ---------------------------------------------------------------------------
-# Dimension/coordinate helpers
-# ---------------------------------------------------------------------------
-
-
 def time_dim_name(ds: xr.Dataset) -> str:
     """Return the name of the time dimension, or '' if not found."""
     if "time" in ds.cf:
@@ -42,9 +37,33 @@ def depth_dim_name(ds: xr.Dataset) -> str:
     return ""
 
 
-# ---------------------------------------------------------------------------
-# Ragged-array timeSeriesProfile helpers (CF H.5.3)
-# ---------------------------------------------------------------------------
+def get_timeseries_id_var(ds: xr.Dataset) -> str | None:
+    """Return the name of the first variable with ``cf_role='timeseries_id'``, or None."""
+    return next(
+        (v for v in list(ds.data_vars) + list(ds.coords)
+         if v in ds and ds[v].attrs.get("cf_role") == "timeseries_id"),
+        None,
+    )
+
+
+def subset_by_timeseries_id(ds: xr.Dataset, timeseries_id_value: str) -> xr.Dataset:
+    """Return a dataset subset to the given timeseries_id value.
+
+    Finds the variable with ``cf_role='timeseries_id'``, locates the matching
+    station along its dimension, and returns ``ds.isel(station_dim=idx)``.
+    If the variable is scalar (0-d) or not found, returns *ds* unchanged.
+
+    Raises ``ValueError`` if *timeseries_id_value* is not found.
+    """
+    stn_var = get_timeseries_id_var(ds)
+    if stn_var is None or ds[stn_var].ndim == 0:
+        return ds
+    stn_dim = ds[stn_var].dims[0]
+    values = _decode_bytes(ds[stn_var].values)
+    idx_arr = np.where(values == timeseries_id_value)[0]
+    if len(idx_arr) == 0:
+        raise ValueError(f"timeseries_id '{timeseries_id_value}' not found in dataset")
+    return ds.isel({stn_dim: int(idx_arr[0])})
 
 
 def is_ragged_tsp(ds: xr.Dataset) -> bool:
@@ -125,14 +144,12 @@ def expand_ragged_tsp(ds: xr.Dataset) -> pd.DataFrame:
             if ds[v].dims == (instance_dim,):
                 result[v] = _decode_bytes(ds[v].values)[stn_of_obs]
 
-    # Profile-level variables (time, etc.) → repeat per obs
     for v in list(ds.data_vars) + list(ds.coords):
         if v not in ds or v in skip:
             continue
         if ds[v].dims == (profile_dim,):
             result[v] = ds[v].values[profile_of_obs]
 
-    # Obs-level variables (depth, data variables)
     for v in list(ds.data_vars) + list(ds.coords):
         if v not in ds or v == row_size_var:
             continue
@@ -149,11 +166,6 @@ def expand_ragged_tsp(ds: xr.Dataset) -> pd.DataFrame:
             df[col] = _decode_bytes(df[col].values)
 
     return df
-
-
-# ---------------------------------------------------------------------------
-# Subsetting
-# ---------------------------------------------------------------------------
 
 
 def subset(
@@ -193,14 +205,13 @@ def to_json_types(ds: xr.Dataset, fill_nan: bool = True) -> xr.Dataset:
     for var in ds.data_vars:
         if ds[var].dtype.kind == "M":
             ds = datetime_with_attrs(ds, var)
-        elif ds[var].dtype.kind == "S":  # Check if the variable is a float
+        elif ds[var].dtype.kind == "S": 
             ds[var] = ds[var].astype(str)
         elif fill_nan and ds[var].dtype.kind == "f":
-            # convert float to object to allow for None as null value
             ds[var] = ds[var].astype(object)
 
     for var in ds.coords:
-        if ds[var].dtype.kind == "M":  # Check if the variable is datetime
+        if ds[var].dtype.kind == "M": 
             ds = datetime_with_attrs(ds, var)
 
     return ds.fillna(None) if fill_nan else ds
